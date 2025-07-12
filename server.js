@@ -11,15 +11,17 @@ const crypto = require('crypto');
 // Firebase Admin SDK
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const serviceAccount = require('./serviceAccountKey.json');
+// *** แก้ไขตรงนี้: ใช้ Environment Variable แทนการ require ไฟล์ ***
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
 // LangChain & Google AI
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
-const { FirestoreVectorStore } = require("@langchain/community/vectorstores/firestore");
+// *** แก้ไขตรงนี้: เปลี่ยนจากการ import จาก @langchain/community ไปเป็น @langchain/firestore โดยตรง ***
+const { FirestoreVectorStore } = require("@langchain/firestore");
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
-const { ChatPromptTemplate } = require("@langchain/core/prompts");
+const { ChatPromptTemplate } = require("langchain/prompts"); // แก้ไข: Import จาก 'langchain/prompts' แทน '@langchain/core/prompts'
 const { createRetrievalChain } = require("langchain/chains/retrieval");
 
 
@@ -36,7 +38,7 @@ const embeddings = new GoogleGenerativeAIEmbeddings({ apiKey: process.env.GOOGLE
 
 // ## ส่วนที่แก้ไข: ตั้งค่า CORS ##
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000' // ใช้ URL จาก .env หรือใช้ localhost สำหรับพัฒนา
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000' // ใช้ URL จาก .env หรือใช้ localhost สำหรับพัฒนา
 };
 app.use(cors(corsOptions));
 
@@ -128,13 +130,13 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
         const textToEmbed = `หัวข้อ: ${title}\nเนื้อหา: ${content}`;
         const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 500, chunkOverlap: 0 });
         const docs = await splitter.createDocuments([textToEmbed]);
-        
+
         docs.forEach(doc => {
             doc.metadata = { ownerId: req.userId, assistantId, sourceTitle: title };
         });
 
         await FirestoreVectorStore.fromDocuments(docs, embeddings, { firestore, collectionName: 'vector_embeddings' });
-        
+
         console.log(`Knowledge added to assistant ${assistantId}: ${title}`);
         res.status(200).json({ message: 'บันทึกข้อมูลความรู้สำเร็จ!' });
 
@@ -165,7 +167,7 @@ app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), asy
 
         const config = doc.data().productionConfig;
         // !!สำคัญ: ในระบบจริงต้องถอดรหัสข้อมูลนี้ก่อนใช้งาน!!
-        const channelSecret = config.customerLineChannelSecret; 
+        const channelSecret = config.customerLineChannelSecret;
         const channelAccessToken = config.customerLineAccessToken;
 
         if (!line.validateSignature(req.body, channelSecret, signature)) {
@@ -175,7 +177,7 @@ app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), asy
         const customerClient = new line.Client({ channelAccessToken });
         const events = JSON.parse(req.body.toString()).events;
         await Promise.all(events.map(event => handleProductionEvent(event, customerClient, assistantId, doc.data().ownerId)));
-        
+
         res.status(200).send('OK');
 
     } catch (error) {
@@ -191,7 +193,7 @@ async function handleProductionEvent(event, client, assistantId, ownerId) {
     if (event.type !== 'message' || event.message.type !== 'text') {
         return Promise.resolve(null);
     }
-    
+
     try {
         const vectorStore = new FirestoreVectorStore(embeddings, { firestore, collectionName: 'vector_embeddings' });
         const retriever = vectorStore.asRetriever({
@@ -205,16 +207,17 @@ async function handleProductionEvent(event, client, assistantId, ownerId) {
                 }
             }
         });
-        
+
+        // แก้ไข: Import ChatPromptTemplate จาก 'langchain/prompts' โดยตรง
         const prompt = ChatPromptTemplate.fromTemplate(`คุณคือผู้ช่วย AI ที่เชี่ยวชาญ จงตอบคำถามให้กระชับและสุภาพโดยอ้างอิงจากบริบทที่ให้มาเท่านั้น หากไม่พบคำตอบในบริบท ให้ตอบว่า "ขออภัยค่ะ ฉันไม่พบข้อมูลเกี่ยวกับเรื่องนี้"
 <context>{context}</context>
 คำถาม: {input}`);
-        
+
         const documentChain = await createStuffDocumentsChain({ llm: model, prompt });
         const retrievalChain = await createRetrievalChain({ combineDocsChain: documentChain, retriever });
 
         const result = await retrievalChain.invoke({ input: event.message.text });
-        
+
         return client.replyMessage(event.replyToken, { type: 'text', text: result.answer });
 
     } catch (error) {
