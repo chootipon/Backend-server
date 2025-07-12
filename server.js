@@ -20,7 +20,7 @@ const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 // *** แก้ไขตรงนี้: ลองเปลี่ยนกลับไป import จาก @langchain/community โดยตรง (หากมีการ export ถูกต้องในเวอร์ชันล่าสุด) ***
 // *** หรือถ้ายังไม่ได้ ให้ลองจาก 'langchain/vectorstores' หรือ 'langchain/community/vectorstores' ตามเอกสารจริง ***
-const { FirestoreVectorStore } = require("@langchain/community"); // เปลี่ยนเป็น import จาก @langchain/community โดยตรง
+const { FirestoreVectorStore } = require("@langchain/community/vectorstores");
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
 const { ChatPromptTemplate } = require("langchain/prompts");
 const { createRetrievalChain } = require("langchain/chains/retrieval");
