@@ -18,7 +18,7 @@
   "author": "Your Name or Organization",
   "license": "MIT",
   "dependencies": {
-    "@langchain/community": "^0.0.64",
+    "@langchain/community": "^0.0.66",
     "@langchain/core": "^0.2.14",
     "@langchain/google-genai": "^0.0.22",
     "@line/bot-sdk": "^9.2.0",
