@@ -19,8 +19,8 @@
   "license": "MIT",
   "dependencies": {
     "@langchain/community": "latest",
-    "@langchain/core": "^0.2.14",
-    "@langchain/google-genai": "^0.0.22",
+    "@langchain/core": "latest",
+    "@langchain/google-genai": "latest",
     "@line/bot-sdk": "^9.2.0",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
