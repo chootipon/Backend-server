@@ -18,10 +18,11 @@ const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
-// *** แก้ไขตรงนี้: เปลี่ยนจากการ import จาก @langchain/community ไปเป็น @langchain/firestore โดยตรง ***
-const { FirestoreVectorStore } = require("@langchain/firestore");
+// *** แก้ไขตรงนี้: ลองเปลี่ยนกลับไป import จาก @langchain/community โดยตรง (หากมีการ export ถูกต้องในเวอร์ชันล่าสุด) ***
+// *** หรือถ้ายังไม่ได้ ให้ลองจาก 'langchain/vectorstores' หรือ 'langchain/community/vectorstores' ตามเอกสารจริง ***
+const { FirestoreVectorStore } = require("@langchain/community"); // เปลี่ยนเป็น import จาก @langchain/community โดยตรง
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
-const { ChatPromptTemplate } = require("langchain/prompts"); // แก้ไข: Import จาก 'langchain/prompts' แทน '@langchain/core/prompts'
+const { ChatPromptTemplate } = require("langchain/prompts");
 const { createRetrievalChain } = require("langchain/chains/retrieval");
 
 
@@ -35,17 +36,13 @@ const embeddings = new GoogleGenerativeAIEmbeddings({ apiKey: process.env.GOOGLE
 
 
 // --- 3. Middleware ---
-
-// ## ส่วนที่แก้ไข: ตั้งค่า CORS ##
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000' // ใช้ URL จาก .env หรือใช้ localhost สำหรับพัฒนา
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000'
 };
 app.use(cors(corsOptions));
 
-// Middleware สำหรับอ่าน Body ของ Request
 app.use('/api', express.json());
 
-// Middleware สำหรับยืนยัน LIFF Access Token และดึง userId
 const liffAuthMiddleware = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -59,7 +56,7 @@ const liffAuthMiddleware = async (req, res, next) => {
         if (response.data.client_id !== process.env.LINE_LIFF_CHANNEL_ID) {
             return res.status(401).json({ error: 'Unauthorized: Invalid LIFF Channel ID' });
         }
-        req.userId = response.data.sub; // เก็บ LINE User ID ไว้ใน request
+        req.userId = response.data.sub;
         next();
     } catch (error) {
         console.error('LIFF token verification failed:', error.response ? error.response.data : error.message);
@@ -70,7 +67,6 @@ const liffAuthMiddleware = async (req, res, next) => {
 
 // --- 4. API Endpoints สำหรับ Mini App ---
 
-// GET /api/assistants - ดึงรายการผู้ช่วยทั้งหมดของผู้ใช้ที่ล็อกอิน
 app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
     try {
         const userId = req.userId;
@@ -89,7 +85,6 @@ app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/assistants - สร้างผู้ช่วย AI ใหม่
 app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
     try {
         const userId = req.userId;
@@ -112,7 +107,6 @@ app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/add-knowledge - เพิ่มความรู้ให้ AI
 app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
     try {
         const { title, content, assistantId } = req.body;
@@ -120,7 +114,6 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Missing required fields.' });
         }
 
-        // ตรวจสอบสิทธิ์ความเป็นเจ้าของ
         const assistantRef = firestore.collection('assistants').doc(assistantId);
         const doc = await assistantRef.get();
         if (!doc.exists || doc.data().ownerId !== req.userId) {
@@ -148,7 +141,6 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
 
 
 // --- 5. Production Webhook สำหรับ LINE OA ของลูกค้า ---
-// ใช้ express.raw เพื่อให้ได้ rawBody มาตรวจสอบลายเซ็น
 app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), async (req, res) => {
     const assistantId = req.params.assistantId;
     const signature = req.headers['x-line-signature'];
@@ -166,7 +158,6 @@ app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), asy
         }
 
         const config = doc.data().productionConfig;
-        // !!สำคัญ: ในระบบจริงต้องถอดรหัสข้อมูลนี้ก่อนใช้งาน!!
         const channelSecret = config.customerLineChannelSecret;
         const channelAccessToken = config.customerLineAccessToken;
 
@@ -186,9 +177,6 @@ app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), asy
     }
 });
 
-/**
- * ฟังก์ชันสำหรับจัดการ Event ในโหมดใช้งานจริง (Production)
- */
 async function handleProductionEvent(event, client, assistantId, ownerId) {
     if (event.type !== 'message' || event.message.type !== 'text') {
         return Promise.resolve(null);
@@ -208,7 +196,6 @@ async function handleProductionEvent(event, client, assistantId, ownerId) {
             }
         });
 
-        // แก้ไข: Import ChatPromptTemplate จาก 'langchain/prompts' โดยตรง
         const prompt = ChatPromptTemplate.fromTemplate(`คุณคือผู้ช่วย AI ที่เชี่ยวชาญ จงตอบคำถามให้กระชับและสุภาพโดยอ้างอิงจากบริบทที่ให้มาเท่านั้น หากไม่พบคำตอบในบริบท ให้ตอบว่า "ขออภัยค่ะ ฉันไม่พบข้อมูลเกี่ยวกับเรื่องนี้"
 <context>{context}</context>
 คำถาม: {input}`);
