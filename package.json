@@ -21,6 +21,8 @@
     "@langchain/community": "latest",
     "@langchain/core": "latest",
     "@langchain/google-genai": "latest",
+    "@langchain/firestore": "latest",
+    "langchain": "latest", // เพิ่ม package นี้เพื่อแก้ไขการ import prompt
     "@line/bot-sdk": "^9.2.0",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
