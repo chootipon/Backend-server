@@ -17,7 +17,7 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 // ## ส่วนที่แก้ไข ##
-const { FirestoreVectorStore } = require("@langchain/community/vectorstores/google_firestore");
+const { FirestoreVectorStore } = require("@langchain/firebase/vectorstores"); // <-- เปลี่ยนมา import จาก @langchain/firebase
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
 const { ChatPromptTemplate } = require("@langchain/core/prompts");
 const { createRetrievalChain } = require("langchain/chains/retrieval");
@@ -28,15 +28,13 @@ const { createRetrievalChain } = require("langchain/chains/retrieval");
 let serviceAccount;
 try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        // สำหรับ Render: อ่านค่าจาก Environment Variable แล้วแปลงกลับเป็น JSON
         serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     } else {
-        // สำหรับการพัฒนาบนเครื่อง: อ่านจากไฟล์โดยตรง
         serviceAccount = require('./serviceAccountKey.json');
     }
 } catch (e) {
     console.error('Failed to load or parse Firebase service account key.', e);
-    process.exit(1); // ออกจากโปรแกรมถ้าไม่สามารถเชื่อมต่อ Firebase ได้
+    process.exit(1);
 }
 
 initializeApp({
@@ -86,7 +84,7 @@ app.use('/api', express.json());
 
 // --- 4. API Endpoints สำหรับ Mini App ---
 
-// GET /api/assistants - ดึงรายการผู้ช่วยทั้งหมดของผู้ใช้
+// GET /api/assistants
 app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
     try {
         const snapshot = await firestore.collection('assistants').where('ownerId', '==', req.userId).orderBy('createdAt', 'desc').get();
@@ -99,7 +97,7 @@ app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/assistants - สร้างผู้ช่วย AI ใหม่
+// POST /api/assistants
 app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
     try {
         const { name } = req.body;
@@ -118,7 +116,7 @@ app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/add-knowledge - เพิ่มความรู้ให้ AI
+// POST /api/add-knowledge
 app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
     try {
         const { title, content, assistantId } = req.body;
@@ -145,7 +143,7 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/connect-assistant - เชื่อมต่อกับ LINE OA ของลูกค้า
+// POST /api/connect-assistant
 app.post('/api/connect-assistant', liffAuthMiddleware, async (req, res) => {
     try {
         const { assistantId, accessToken, channelSecret } = req.body;
@@ -155,9 +153,8 @@ app.post('/api/connect-assistant', liffAuthMiddleware, async (req, res) => {
         const doc = await assistantRef.get();
         if (!doc.exists || doc.data().ownerId !== req.userId) return res.status(403).json({ message: 'Forbidden' });
 
-        // !!สำคัญ: ในระบบจริงต้องเข้ารหัสข้อมูลนี้ก่อนบันทึกเสมอ!!
-        const encryptedAccessToken = accessToken;
-        const encryptedChannelSecret = channelSecret;
+        const encryptedAccessToken = accessToken; // TODO: Implement real encryption
+        const encryptedChannelSecret = channelSecret; // TODO: Implement real encryption
 
         await assistantRef.set({
             productionConfig: {
@@ -175,7 +172,7 @@ app.post('/api/connect-assistant', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/test-chat - ห้องแชททดลอง
+// POST /api/test-chat
 app.post('/api/test-chat', liffAuthMiddleware, async (req, res) => {
     const { message, assistantId } = req.body;
     if (!message || !assistantId) return res.status(400).json({ error: 'Message and Assistant ID are required' });
@@ -194,7 +191,7 @@ app.post('/api/test-chat', liffAuthMiddleware, async (req, res) => {
 });
 
 
-// --- 5. Production Webhook สำหรับ LINE OA ของลูกค้า ---
+// --- 5. Production Webhook ---
 app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), async (req, res) => {
     const assistantId = req.params.assistantId;
     const signature = req.headers['x-line-signature'];
