@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // =================================================================
     // 1. ค่าคงที่และตัวแปร
     // =================================================================
-    const RENDER_APP_URL = ''; // ใช้บ้านเดียวกัน ไม่ต้องใส่ URL
+    const RENDER_APP_URL = ''; // ใช้บ้านเดียวกัน
     const LIFF_ID = '2007746118-q42ABEk3'; // <<-- สำคัญมาก: ใส่ LIFF ID ของคุณ
 
     // --- การอ้างอิงถึง Element ---
@@ -14,14 +14,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorContainer = document.getElementById('error-container');
     const errorDetails = document.getElementById('error-details');
     const addAssistantBtn = document.getElementById('add-assistant-btn');
-    
-    // (เพิ่มการอ้างอิงถึง Element อื่นๆ ที่จำเป็นสำหรับฟังก์ชันเต็มรูปแบบ)
-    const pages = document.querySelectorAll('#app-container > main > div[id$="-page"]');
-    const navButtons = document.querySelectorAll('.nav-btn');
-    const createAssistantModal = document.getElementById('create-assistant-modal');
-    const cancelCreateBtn = document.getElementById('cancel-create-btn');
-    const saveCreateBtn = document.getElementById('save-create-btn');
-
 
     // =================================================================
     // 2. ฟังก์ชันหลัก
@@ -37,9 +29,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!liff.isLoggedIn()) {
                 showInfo('กำลังพาไปล็อกอิน...');
-                
-                // ## นี่คือหัวใจของการแก้ไข: ขอสิทธิ์ที่จำเป็น (profile และ openid) ##
-                // การเพิ่ม 'openid' จะทำให้ Access Token ที่ได้มามี User ID อยู่ข้างใน
+                // ## ส่วนที่แก้ไข: ขอสิทธิ์ที่จำเป็น (profile และ openid) ##
                 liff.login({ 
                     redirectUri: window.location.href,
                     scope: 'profile openid' 
@@ -47,7 +37,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return; 
             }
             
-            // รอให้ LIFF SDK เตรียมทุกอย่างให้พร้อม 100% ก่อนทำงานต่อ
+            // ## ส่วนที่แก้ไข: รอให้ liff.ready ทำงานเสร็จสมบูรณ์ ##
+            // เพื่อให้แน่ใจว่าทุกอย่างพร้อมใช้งาน
             await liff.ready;
             
             showInfo('ดึงข้อมูลโปรไฟล์...');
@@ -102,9 +93,11 @@ document.addEventListener('DOMContentLoaded', function() {
     async function fetchAndRenderAssistants() {
         showInfo('กำลังดึงข้อมูล...');
         try {
+            // ## ส่วนที่แก้ไข: ตรวจสอบ Access Token ก่อนเสมอ ##
             const accessToken = liff.getAccessToken();
             if (!accessToken) {
-                throw new Error('ไม่สามารถดึง Access Token จาก LIFF ได้ในตอนนี้ กรุณาลองรีเฟรชหน้าแอป');
+                // นี่คือจุดที่เคยเป็นปัญหา
+                throw new Error('ไม่สามารถดึง Access Token จาก LIFF ได้ในตอนนี้');
             }
 
             const response = await fetch(`${RENDER_APP_URL}/api/assistants`, {
@@ -112,6 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             if (!response.ok) {
+                // พยายามอ่าน error message จาก server ก่อน
                 const errorData = await response.json().catch(() => ({ error: `Server responded with status ${response.status}` }));
                 throw new Error(errorData.error || 'ไม่สามารถดึงข้อมูลผู้ช่วยได้');
             }
@@ -147,44 +141,28 @@ document.addEventListener('DOMContentLoaded', function() {
      * จัดการการสร้างผู้ช่วย AI ใหม่
      */
     async function handleCreateAssistant() {
-        const nameInput = document.getElementById('new-assistant-name');
-        const statusDiv = document.getElementById('create-status');
-        if (!nameInput || !statusDiv) return;
+        const assistantName = prompt("กรุณาตั้งชื่อผู้ช่วย AI ใหม่:");
+        if (!assistantName || assistantName.trim() === '') return;
 
-        const assistantName = nameInput.value.trim();
-        if (!assistantName) {
-            statusDiv.textContent = 'กรุณาตั้งชื่อผู้ช่วย';
-            return;
-        }
-        saveCreateBtn.disabled = true;
-        saveCreateBtn.textContent = 'กำลังสร้าง...';
+        showInfo('กำลังสร้างผู้ช่วยใหม่...');
         try {
-            const response = await fetch(`${RENDER_APP_URL}/api/assistants`, {
+             const response = await fetch(`${RENDER_APP_URL}/api/assistants`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + liff.getAccessToken()
                 },
-                body: JSON.stringify({ name: assistantName })
+                body: JSON.stringify({ name: assistantName.trim() })
             });
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: 'ไม่สามารถสร้างผู้ช่วยได้' }));
-                throw new Error(errorData.error);
+                const errorData = await response.json().catch(() => ({ error: `Server responded with status ${response.status}` }));
+                throw new Error(errorData.error || 'ไม่สามารถสร้างผู้ช่วยได้');
             }
-            closeAllModals();
-            nameInput.value = '';
             await fetchAndRenderAssistants();
         } catch(error) {
             console.error('Create Assistant Error:', error);
-            statusDiv.textContent = `เกิดข้อผิดพลาด: ${error.message}`;
-        } finally {
-            saveCreateBtn.disabled = false;
-            saveCreateBtn.textContent = 'สร้างผู้ช่วย';
+            showError(error.message);
         }
-    }
-    
-    function closeAllModals() {
-        if (createAssistantModal) createAssistantModal.classList.add('hidden');
     }
 
     // =================================================================
@@ -193,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     main(); // <-- เริ่มต้นการทำงานทั้งหมด
     
-    if (addAssistantBtn) addAssistantBtn.addEventListener('click', handleCreateAssistant);
-    if (cancelCreateBtn) cancelCreateBtn.addEventListener('click', closeAllModals);
-    if (saveCreateBtn) saveCreateBtn.addEventListener('click', handleCreateAssistant);
+    if (addAssistantBtn) {
+        addAssistantBtn.addEventListener('click', handleCreateAssistant);
+    }
 });
