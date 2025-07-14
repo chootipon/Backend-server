@@ -31,7 +31,7 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // --- 3. Middleware ---
-app.use(cors()); // เปิด CORS สำหรับทุกอย่าง
+app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname)); // เสิร์ฟไฟล์หน้าบ้านจาก Root Directory
 
@@ -58,8 +58,12 @@ const liffAuthMiddleware = async (req, res, next) => {
     }
 };
 
-// --- 4. API Endpoints ---
-app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
+// --- 4. API Routes ---
+// เราจะใช้ middleware ยืนยันตัวตนกับทุก route ที่ขึ้นต้นด้วย /api
+const apiRouter = express.Router();
+apiRouter.use(liffAuthMiddleware);
+
+apiRouter.get('/assistants', async (req, res) => {
     try {
         const snapshot = await firestore.collection('assistants').where('ownerId', '==', req.userId).get();
         if (snapshot.empty) return res.status(200).json([]);
@@ -79,7 +83,7 @@ app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
+apiRouter.post('/assistants', async (req, res) => {
     try {
         const { name } = req.body;
         if (!name) return res.status(400).json({ error: 'Assistant name is required' });
@@ -98,15 +102,12 @@ app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
 
 // (ใส่ API Endpoints อื่นๆ ที่นี่ในอนาคต)
 
+app.use('/api', apiRouter); // บอก Express ให้ใช้ Router นี้สำหรับ /api
+
 // --- 5. Route สำหรับแสดงหน้าเว็บ Mini App ---
+// Route นี้ต้องอยู่ล่างสุด เพื่อให้ API routes อื่นๆ ทำงานก่อน
 app.get('*', (req, res) => {
-    // ตรวจสอบว่า request ไม่ได้ขึ้นต้นด้วย /api
-    if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, 'index.html'));
-    } else {
-        // ถ้าเป็น /api ที่ไม่มีอยู่ ให้ส่ง 404
-        res.status(404).send('API endpoint not found');
-    }
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // --- 6. เริ่มการทำงานของเซิร์ฟเวอร์ ---
