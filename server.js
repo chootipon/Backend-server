@@ -9,6 +9,8 @@ const axios = require('axios');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const line = require('@line/bot-sdk');
+
 
 // --- 2. Configurations & Initializations ---
 let serviceAccount;
@@ -60,7 +62,7 @@ const liffAuthMiddleware = async (req, res, next) => {
 
 // --- 4. API Routes ---
 const apiRouter = express.Router();
-apiRouter.use(liffAuthMiddleware); // ใช้ Middleware ยืนยันตัวตนกับทุก API route
+apiRouter.use(liffAuthMiddleware);
 
 // ดึงรายการผู้ช่วยทั้งหมด
 apiRouter.get('/assistants', async (req, res) => {
@@ -70,7 +72,11 @@ apiRouter.get('/assistants', async (req, res) => {
         
         const assistants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
-        assistants.sort((a, b) => (b.createdAt?.toDate().getTime() || 0) - (a.createdAt?.toDate().getTime() || 0));
+        assistants.sort((a, b) => {
+            const timeA = a.createdAt ? a.createdAt.toDate().getTime() : 0;
+            const timeB = b.createdAt ? b.createdAt.toDate().getTime() : 0;
+            return timeB - timeA;
+        });
         
         res.status(200).json(assistants);
     } catch (error) {
@@ -165,15 +171,48 @@ apiRouter.post('/connect-assistant', async (req, res) => {
     }
 });
 
-
 app.use('/api', apiRouter);
 
 // --- 5. Production Webhook ---
 app.post('/webhook/:assistantId', express.raw({ type: 'application/json' }), async (req, res) => {
-    // ... โค้ดส่วนนี้เหมือนเดิม ...
+    const assistantId = req.params.assistantId;
+    const signature = req.headers['x-line-signature'];
+    if (!assistantId || !signature) return res.status(400).send('Bad Request');
+
+    try {
+        const assistantRef = firestore.collection('assistants').doc(assistantId);
+        const doc = await assistantRef.get();
+        if (!doc.exists || !doc.data().productionConfig) throw new Error('Assistant not found or not configured for production.');
+
+        const config = doc.data().productionConfig;
+        const channelSecret = config.customerLineChannelSecret; 
+        const channelAccessToken = config.customerLineAccessToken;
+
+        if (!line.validateSignature(req.body, channelSecret, signature)) throw new Error('Invalid signature');
+
+        const customerClient = new line.Client({ channelAccessToken });
+        const events = JSON.parse(req.body.toString()).events;
+        await Promise.all(events.map(event => handleProductionEvent(event, customerClient, assistantId)));
+        
+        res.status(200).send('OK');
+    } catch (error) {
+        console.error(`Webhook Error for ${assistantId}:`, error.message);
+        res.status(500).send('Error');
+    }
 });
 
 // --- 6. Helper Functions ---
+async function handleProductionEvent(event, client, assistantId) {
+    if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
+    try {
+        const aiReply = await getAiResponse(event.message.text, assistantId);
+        return client.replyMessage(event.replyToken, { type: 'text', text: aiReply });
+    } catch (error) {
+        console.error('AI Processing Error:', error);
+        return client.replyMessage(event.replyToken, { type: 'text', text: 'ขออภัยค่ะ ระบบกำลังมีปัญหา โปรดลองอีกครั้งในภายหลัง' });
+    }
+}
+
 async function getAiResponse(userInput, assistantId) {
     const knowledgeSnapshot = await firestore.collection('assistants').doc(assistantId).collection('knowledge').get();
     if (knowledgeSnapshot.empty) {
@@ -184,7 +223,7 @@ async function getAiResponse(userInput, assistantId) {
         const data = doc.data();
         context += `- หัวข้อ: ${data.title}, เนื้อหา: ${data.content}\n`;
     });
-    const prompt = `จากข้อมูลต่อไปนี้: \n---\n${context}\n---\n\nจงตอบคำถามนี้ให้ดีที่สุด: "${userInput}"\n\nคำตอบของคุณคือ:`;
+    const prompt = `จากข้อมูลต่อไปนี้: \n---\n${context}\n---\n\nจงตอบคำถามนี้ให้ดีที่สุด โดยอ้างอิงจากข้อมูลที่ให้มาเท่านั้น: "${userInput}"\n\nคำตอบของคุณคือ:`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
