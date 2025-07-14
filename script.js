@@ -1,4 +1,4 @@
-const LIFF_ID = 'YOUR_LIFF_ID_HERE'; // เปลี่ยนเป็น LIFF ID จริงของคุณ
+const LIFF_ID = '2007746118-q42ABEk3'; // เปลี่ยนเป็น LIFF ID จริงของคุณ
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initializeLIFF();
