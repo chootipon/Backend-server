@@ -3,8 +3,8 @@
 // --- 1. Imports ---
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const line = require('@line/bot-sdk');
-const cors = require('cors');
 const axios = require('axios');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -31,28 +31,36 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // --- 3. Middleware ---
-const corsOptions = { origin: process.env.FRONTEND_URL || 'http://localhost:3000' };
-app.use(cors(corsOptions));
-app.use('/api', express.json()); // ใช้ JSON parser สำหรับทุก route ที่ขึ้นต้นด้วย /api
+app.use(express.json()); // Middleware สำหรับอ่าน JSON body
+app.use(express.static(path.join(__dirname, 'public'))); // Middleware สำหรับเสิร์ฟไฟล์หน้าเว็บ
 
-// --- 4. API Endpoints ---
-
-// GET /api/assistants - ดึงรายการผู้ช่วยทั้งหมดของผู้ใช้
-app.get('/api/assistants', async (req, res) => {
+const liffAuthMiddleware = async (req, res, next) => {
     try {
-        // --- ยืนยันตัวตนและดึง User ID ---
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized: No token' });
         const accessToken = authHeader.split(' ')[1];
-        const verifyResponse = await axios.get('https://api.line.me/oauth2/v2.1/verify', { params: { access_token: accessToken } });
-        if (verifyResponse.data.client_id !== process.env.LINE_LIFF_CHANNEL_ID) return res.status(401).json({ error: 'Unauthorized: Invalid LIFF ID' });
-        const liffUserId = verifyResponse.data.sub;
-        if (!liffUserId) return res.status(401).json({ error: 'Unauthorized: User ID not found' });
-        // --- จบการยืนยันตัวตน ---
+        
+        const response = await axios.get('https://api.line.me/oauth2/v2.1/verify', { params: { access_token: accessToken } });
+        
+        if (response.data.client_id !== process.env.LINE_LIFF_CHANNEL_ID) {
+             console.error(`LIFF ID Mismatch. Expected: ${process.env.LINE_LIFF_CHANNEL_ID}, Got: ${response.data.client_id}`);
+             return res.status(401).json({ error: 'Unauthorized: Invalid LIFF Channel ID' });
+        }
+        
+        req.userId = response.data.sub;
+        if (!req.userId) return res.status(401).json({ error: 'Unauthorized: User ID not found in token' });
+        
+        next();
+    } catch (error) {
+        console.error('LIFF Auth Error:', error.response ? error.response.data : error.message);
+        return res.status(401).json({ error: 'Unauthorized: Token verification failed' });
+    }
+};
 
-        const assistantsRef = firestore.collection('assistants');
-        const snapshot = await assistantsRef.where('ownerId', '==', liffUserId).get();
-
+// --- 4. API Endpoints ---
+app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
+    try {
+        const snapshot = await firestore.collection('assistants').where('ownerId', '==', req.userId).get();
         if (snapshot.empty) return res.status(200).json([]);
         
         const assistants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -65,44 +73,37 @@ app.get('/api/assistants', async (req, res) => {
         
         res.status(200).json(assistants);
     } catch (error) {
-        console.error('Error fetching assistants:', error.response ? error.response.data : error.message);
+        console.error('Error fetching assistants:', error);
         res.status(500).json({ error: 'Failed to fetch assistants' });
     }
 });
 
-// POST /api/assistants - สร้างผู้ช่วย AI ใหม่
-app.post('/api/assistants', async (req, res) => {
+app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
     try {
-        // --- ยืนยันตัวตนและดึง User ID ---
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized: No token' });
-        const accessToken = authHeader.split(' ')[1];
-        const verifyResponse = await axios.get('https://api.line.me/oauth2/v2.1/verify', { params: { access_token: accessToken } });
-        if (verifyResponse.data.client_id !== process.env.LINE_LIFF_CHANNEL_ID) return res.status(401).json({ error: 'Unauthorized: Invalid LIFF ID' });
-        const liffUserId = verifyResponse.data.sub;
-        if (!liffUserId) return res.status(401).json({ error: 'Unauthorized: User ID not found' });
-        // --- จบการยืนยันตัวตน ---
-
         const { name } = req.body;
         if (!name) return res.status(400).json({ error: 'Assistant name is required' });
-
         const newAssistant = {
             assistantName: name,
-            ownerId: liffUserId, // ใช้ User ID ที่ยืนยันแล้ว
+            ownerId: req.userId,
             createdAt: FieldValue.serverTimestamp(),
         };
         const docRef = await firestore.collection('assistants').add(newAssistant);
         res.status(201).json({ id: docRef.id, ...newAssistant });
     } catch (error) {
-        console.error('Error creating assistant:', error.response ? error.response.data : error.message);
+        console.error('Error creating assistant:', error);
         res.status(500).json({ error: 'Failed to create assistant' });
     }
 });
 
-// (Endpoints และ Helper Functions อื่นๆ ทั้งหมดจะใช้ Logic ที่คล้ายกัน)
-// ...
+// (API Endpoints อื่นๆ จะใช้โครงสร้างที่คล้ายกัน)
 
-// --- 5. เริ่มการทำงานของเซิร์ฟเวอร์ ---
+// --- 5. Route สำหรับแสดงหน้าเว็บ Mini App ---
+// Route นี้ต้องอยู่ล่างสุด เพื่อให้ API routes อื่นๆ ทำงานก่อน
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// --- 6. เริ่มการทำงานของเซิร์ฟเวอร์ ---
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
