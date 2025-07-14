@@ -1,13 +1,23 @@
 {
-  "name": "line-auth-debugger",
+  "name": "line-ai-builder-platform",
   "version": "1.0.0",
+  "description": "A platform to build AI co-pilots for LINE OA.",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": "18.x" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
+    "@google/generative-ai": "^0.12.0",
+    "@line/bot-sdk": "^9.2.2",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.1"
   }
 }
