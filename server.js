@@ -239,8 +239,8 @@ async function getAiResponse(userInput, ownerId, assistantId) {
             composite: {
                 operator: "AND",
                 filters: [
-                    { operator: "EQUAL", name: "ownerId", value: ownerId },
-                    { operator: "EQUAL", name: "assistantId", value: assistantId }
+                    { operator: "EQUAL", "name": "ownerId", "value": ownerId },
+                    { operator: "EQUAL", "name": "assistantId", "value": assistantId }
                 ]
             }
         }
