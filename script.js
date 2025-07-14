@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 1. ค่าคงที่และตัวแปร
     // =================================================================
     const RENDER_APP_URL = ''; // ใช้บ้านเดียวกัน ไม่ต้องใส่ URL
-    const LIFF_ID = 'YOUR_LIFF_ID'; // <<-- สำคัญมาก: ใส่ LIFF ID ของคุณ
+    const LIFF_ID = '2007746118-q42ABEk3'; // <<-- สำคัญมาก: ใส่ LIFF ID ของคุณ
 
     // --- การอ้างอิงถึง Element ---
     const profilePicture = document.getElementById('profile-picture');
