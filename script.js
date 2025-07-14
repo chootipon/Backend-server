@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // ## ส่วนที่แก้ไข: ทำให้เรียก API ในบ้านตัวเอง ##
     const RENDER_APP_URL = ''; // ไม่ต้องใส่อะไรเลย มันจะเรียกหา URL ปัจจุบันโดยอัตโนมัติ
-    const LIFF_ID = 'YOUR_LIFF_ID'; // <<-- สำคัญมาก: ใส่ LIFF ID ของคุณ
+    const LIFF_ID = '2007746118-q42ABEk3'; // <<-- สำคัญมาก: ใส่ LIFF ID ของคุณ
 
     // --- การอ้างอิงถึง Element ต่างๆ ในหน้าเว็บ ---
     const profilePicture = document.getElementById('profile-picture');
