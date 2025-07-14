@@ -16,7 +16,8 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
-const { FirestoreVectorStore } = require("@langchain/community/vectorstores/firestore");
+// ## ส่วนที่แก้ไข ##
+const { FirestoreVectorStore } = require("@langchain/community/vectorstores/google_firestore");
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
 const { ChatPromptTemplate } = require("@langchain/core/prompts");
 const { createRetrievalChain } = require("langchain/chains/retrieval");
