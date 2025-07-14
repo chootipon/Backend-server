@@ -3,8 +3,9 @@
 // --- 1. Imports ---
 require('dotenv').config();
 const express = require('express');
-const path = require('path');
+const path = require('path'); // <-- สำคัญ: ต้องมี path
 const line = require('@line/bot-sdk');
+const cors = require('cors');
 const axios = require('axios');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -31,8 +32,11 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // --- 3. Middleware ---
-app.use(express.json()); // Middleware สำหรับอ่าน JSON body
-app.use(express.static(path.join(__dirname, 'public'))); // Middleware สำหรับเสิร์ฟไฟล์หน้าเว็บ
+app.use(cors()); // เปิด CORS สำหรับทุกอย่างในตอนนี้เพื่อความง่าย
+app.use(express.json()); // ใช้ JSON parser สำหรับทุก route
+
+// ## ส่วนที่แก้ไข: บอกให้ Express เสิร์ฟไฟล์จาก Root Directory ##
+app.use(express.static(__dirname));
 
 const liffAuthMiddleware = async (req, res, next) => {
     try {
@@ -58,7 +62,10 @@ const liffAuthMiddleware = async (req, res, next) => {
 };
 
 // --- 4. API Endpoints ---
-app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
+// ใช้ Middleware ยืนยันตัวตนสำหรับทุก API route
+app.use('/api', liffAuthMiddleware);
+
+app.get('/api/assistants', async (req, res) => {
     try {
         const snapshot = await firestore.collection('assistants').where('ownerId', '==', req.userId).get();
         if (snapshot.empty) return res.status(200).json([]);
@@ -78,7 +85,7 @@ app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
+app.post('/api/assistants', async (req, res) => {
     try {
         const { name } = req.body;
         if (!name) return res.status(400).json({ error: 'Assistant name is required' });
@@ -95,12 +102,12 @@ app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// (API Endpoints อื่นๆ จะใช้โครงสร้างที่คล้ายกัน)
+// (ใส่ API Endpoints อื่นๆ ที่นี่)
 
 // --- 5. Route สำหรับแสดงหน้าเว็บ Mini App ---
 // Route นี้ต้องอยู่ล่างสุด เพื่อให้ API routes อื่นๆ ทำงานก่อน
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // --- 6. เริ่มการทำงานของเซิร์ฟเวอร์ ---
