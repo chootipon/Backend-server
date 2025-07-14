@@ -17,7 +17,7 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 // ## ส่วนที่แก้ไข ##
-const { FirestoreVectorStore } = require("@langchain/firebase/vectorstores"); // <-- เปลี่ยนมา import จาก @langchain/firebase
+const { FirestoreVectorStore } = require("@langchain/google-firestore"); // <-- แก้ไข Import Path ให้ถูกต้อง
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
 const { ChatPromptTemplate } = require("@langchain/core/prompts");
 const { createRetrievalChain } = require("langchain/chains/retrieval");
@@ -134,7 +134,8 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
             doc.metadata = { ownerId: req.userId, assistantId, sourceTitle: title };
         });
 
-        await FirestoreVectorStore.fromDocuments(docs, embeddings, { firestore, collectionName: 'vector_embeddings' });
+        const vectorStore = new FirestoreVectorStore(embeddings, { firestore });
+        await vectorStore.addDocuments(docs);
         
         res.status(200).json({ message: 'บันทึกข้อมูลความรู้สำเร็จ!' });
     } catch (error) {
@@ -232,14 +233,14 @@ async function handleProductionEvent(event, client, assistantId, ownerId) {
 }
 
 async function getAiResponse(userInput, ownerId, assistantId) {
-    const vectorStore = new FirestoreVectorStore(embeddings, { firestore, collectionName: 'vector_embeddings' });
+    const vectorStore = new FirestoreVectorStore(embeddings, { firestore });
     const retriever = vectorStore.asRetriever({
         filter: {
-            "composite": {
-                "operator": "AND",
-                "filters": [
-                    { "operator": "EQUAL", "name": "ownerId", "value": ownerId },
-                    { "operator": "EQUAL", "name": "assistantId", "value": assistantId }
+            composite: {
+                operator: "AND",
+                filters: [
+                    { operator: "EQUAL", name: "ownerId", value: ownerId },
+                    { operator: "EQUAL", name: "assistantId", value: assistantId }
                 ]
             }
         }
