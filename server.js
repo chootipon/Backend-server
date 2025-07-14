@@ -17,7 +17,7 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 // ## ส่วนที่แก้ไข ##
-const { FirestoreVectorStore } = require("@langchain/google-firestore"); // <-- แก้ไข Import Path ให้ถูกต้อง
+const { FirestoreVectorStore } = require("@langchain/community/vectorstores/firestore");
 const { createStuffDocumentsChain } = require("langchain/chains/combine_documents");
 const { ChatPromptTemplate } = require("@langchain/core/prompts");
 const { createRetrievalChain } = require("langchain/chains/retrieval");
