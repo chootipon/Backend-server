@@ -19,7 +19,7 @@ try {
         serviceAccount = require('./serviceAccountKey.json');
     }
 } catch (e) {
-    console.error('Failed to load or parse Firebase service account key.', e);
+    console.error('CRITICAL: Failed to load or parse Firebase service account key.', e);
     process.exit(1);
 }
 
@@ -43,6 +43,7 @@ const liffAuthMiddleware = async (req, res, next) => {
         req.userId = response.data.sub;
         next();
     } catch (error) {
+        console.error('LIFF Auth Error:', error.response ? error.response.data : error.message);
         return res.status(401).json({ error: 'Unauthorized: Token verification failed' });
     }
 };
@@ -50,7 +51,54 @@ app.use('/api', express.json());
 
 // --- 4. API Endpoints ---
 
-// POST /api/add-knowledge - เพิ่มความรู้ (เก็บใน Firestore แบบง่าย)
+// GET /api/assistants
+app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
+    try {
+        const userId = req.userId;
+        const assistantsRef = firestore.collection('assistants');
+        
+        // ## ส่วนที่แก้ไข: เอา .orderBy() ออกไปก่อนเพื่อป้องกัน Error ##
+        const snapshot = await assistantsRef.where('ownerId', '==', userId).get();
+
+        if (snapshot.empty) return res.status(200).json([]);
+        
+        const assistants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // เรียงลำดับด้วย JavaScript แทนชั่วคราว
+        // ตรวจสอบให้แน่ใจว่ามี field createdAt ก่อนทำการ sort
+        assistants.sort((a, b) => {
+            const timeA = a.createdAt ? a.createdAt.toDate().getTime() : 0;
+            const timeB = b.createdAt ? b.createdAt.toDate().getTime() : 0;
+            return timeB - timeA; // จากใหม่ไปเก่า
+        });
+        
+        res.status(200).json(assistants);
+    } catch (error) {
+        console.error('Error fetching assistants:', error);
+        res.status(500).json({ error: 'Failed to fetch assistants' });
+    }
+});
+
+// POST /api/assistants
+app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Assistant name is required' });
+        const newAssistant = {
+            assistantName: name,
+            ownerId: req.userId,
+            createdAt: FieldValue.serverTimestamp(), // FieldValue.serverTimestamp() ถูกต้องแล้ว
+        };
+        const docRef = await firestore.collection('assistants').add(newAssistant);
+        res.status(201).json({ id: docRef.id, ...newAssistant });
+    } catch (error) {
+        console.error('Error creating assistant:', error);
+        res.status(500).json({ error: 'Failed to create assistant' });
+    }
+});
+
+// (Endpoints และ Helper Functions อื่นๆ ทั้งหมดเหมือนเดิม)
+// POST /api/add-knowledge
 app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
     try {
         const { title, content, assistantId } = req.body;
@@ -60,7 +108,6 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
         const doc = await assistantRef.get();
         if (!doc.exists || doc.data().ownerId !== req.userId) return res.status(403).json({ message: 'Forbidden' });
 
-        // สร้าง Collection ย่อยเพื่อเก็บความรู้
         const knowledgeRef = assistantRef.collection('knowledge').doc();
         await knowledgeRef.set({
             title: title,
@@ -75,7 +122,7 @@ app.post('/api/add-knowledge', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/test-chat - ห้องแชททดลอง
+// POST /api/test-chat
 app.post('/api/test-chat', liffAuthMiddleware, async (req, res) => {
     const { message, assistantId } = req.body;
     if (!message || !assistantId) return res.status(400).json({ error: 'Message and Assistant ID are required' });
@@ -93,61 +140,27 @@ app.post('/api/test-chat', liffAuthMiddleware, async (req, res) => {
     }
 });
 
-// GET /api/assistants
-app.get('/api/assistants', liffAuthMiddleware, async (req, res) => {
-    try {
-        const snapshot = await firestore.collection('assistants').where('ownerId', '==', req.userId).orderBy('createdAt', 'desc').get();
-        if (snapshot.empty) return res.status(200).json([]);
-        const assistants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        res.status(200).json(assistants);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch assistants' });
-    }
-});
-
-// POST /api/assistants
-app.post('/api/assistants', liffAuthMiddleware, async (req, res) => {
-    try {
-        const { name } = req.body;
-        if (!name) return res.status(400).json({ error: 'Assistant name is required' });
-        const newAssistant = {
-            assistantName: name,
-            ownerId: req.userId,
-            createdAt: FieldValue.serverTimestamp(),
-        };
-        const docRef = await firestore.collection('assistants').add(newAssistant);
-        res.status(201).json({ id: docRef.id, ...newAssistant });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to create assistant' });
-    }
-});
-
-
-// --- 5. Helper Function `getAiResponse` ---
 async function getAiResponse(userInput, assistantId) {
-    // 1. ดึงข้อมูลความรู้ทั้งหมดของ Assistant คนนี้จาก Firestore
     const knowledgeSnapshot = await firestore.collection('assistants').doc(assistantId).collection('knowledge').get();
     if (knowledgeSnapshot.empty) {
         return "ขออภัยค่ะ ยังไม่มีข้อมูลความรู้สำหรับผู้ช่วยคนนี้ กรุณาสอนข้อมูลก่อนค่ะ";
     }
 
-    // 2. นำข้อมูลทั้งหมดมาสร้างเป็น Context
     let context = "ข้อมูลความรู้:\n";
     knowledgeSnapshot.forEach(doc => {
         const data = doc.data();
         context += `- หัวข้อ: ${data.title}, เนื้อหา: ${data.content}\n`;
     });
 
-    // 3. สร้าง Prompt ที่สมบูรณ์
     const prompt = `จากข้อมูลต่อไปนี้: \n---\n${context}\n---\n\nจงตอบคำถามนี้ให้ดีที่สุด: "${userInput}"\n\nคำตอบของคุณคือ:`;
 
-    // 4. เรียก Gemini API โดยตรง
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
 }
 
-// --- 6. เริ่มการทำงานของเซิร์ฟเวอร์ ---
+
+// --- 5. เริ่มการทำงานของเซิร์ฟเวอร์ ---
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
